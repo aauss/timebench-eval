@@ -1,6 +1,12 @@
 from timebench_eval.timebench_eval import TimebenchEval
 import pytest
-from conftest import PREDICTION_1, PREDICTION_2, PREDICTION_3, PREDICTION_4
+from conftest import (
+    PREDICTION_1,
+    PREDICTION_2,
+    PREDICTION_3,
+    PREDICTION_4,
+    PREDICTION_5,
+)
 
 
 @pytest.mark.parametrize(
@@ -39,6 +45,33 @@ from conftest import PREDICTION_1, PREDICTION_2, PREDICTION_3, PREDICTION_4
             {
                 "exact_match": [1],
                 "f1": [1],
+            },
+        ),
+        (
+            PREDICTION_5,
+            "B. No more than ten minutes && C. No more than five minutes",
+            "TimeDial",
+            {
+                "exact_match": [1],
+                "f1": [1],
+            },
+        ),
+        (
+            PREDICTION_5,
+            "B.",
+            "TimeDial",
+            {
+                "exact_match": [0],
+                "f1": [pytest.approx(2 / 3, rel=1e-6)],
+            },
+        ),
+        (
+            PREDICTION_5,
+            "A.",
+            "TimeDial",
+            {
+                "exact_match": [0],
+                "f1": [0],
             },
         ),
     ],

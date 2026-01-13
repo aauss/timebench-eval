@@ -13,13 +13,14 @@
 # limitations under the License.
 """TODO: Add a description here."""
 
+import re
+from datetime import datetime
+
 from dateutil import parser
 from dateutil.parser import ParserError
 
-
 import evaluate
 import datasets
-import numpy as np
 
 
 # TODO: Add BibTeX citation
@@ -92,6 +93,31 @@ class TimebenchEval(evaluate.Metric):
             reference_urls=["http://path.to.reference.url/new_module"],
         )
 
+    def _compute(
+        self, predictions: list[str], references: list[str], task: str
+    ) -> dict[str, list[float]]:
+        """
+        Compute evaluation metrics for the given predictions and references.
+
+        Args:
+            predictions: List of prediction strings to evaluate.
+            references: List of reference strings to compare against.
+            task: Task type, one of: "TempReason", "TimeQA", "MenatQA", "Date Arithmetic", "TimeDial".
+
+        Returns:
+            Dictionary containing metric scores (exact_match and/or f1) as lists of floats.
+        """
+        if task in [
+            "TempReason",
+            "TimeQA",
+            "MenatQA",
+        ]:
+            return self._call_squad(predictions, references)
+        elif task == "Date Arithmetic":
+            return self._compare_dates(predictions, references)
+        elif task == "TimeDial":
+            return self._compute_timedial(predictions, references)
+
     @staticmethod
     def _extract_answer(response: str) -> str | None:
         """Extract the answer from the response"""
@@ -107,7 +133,44 @@ class TimebenchEval(evaluate.Metric):
             return "unanswerable"
         return answer or None
 
-    def _call_squad(self, predictions, references):
+    def _extract_selected_options(self, text: str) -> set[str]:
+        """
+        Extract selected option letters (A, B, C, D) from various formats:
+        - "B, C"
+        - "B and C"
+        - "B & C"
+        - "B && C"
+        - "B. No more than ten minutes && C. No more than five minutes"
+        - "Options B and C"
+        - "The answer is B, C"
+        """
+        if not text:
+            return set()
+
+        # Pattern matches option letters that appear:
+        # 1. At word boundary followed by period, comma, space, &, or end: \b[A-D](?=[.\s,&]|$)
+        # 2. This avoids matching letters inside words like "CAD" or "BAD"
+
+        # Find all A, B, C, D that look like option selections
+        # They should be at a word boundary and followed by typical delimiters
+        pattern = r"\b([A-D])(?:\.|,|\s|&|$)"
+
+        matches = re.findall(pattern, text)
+        return set(matches)
+
+    def _call_squad(
+        self, predictions: list[str], references: list[str]
+    ) -> dict[str, list[float]]:
+        """
+        Compute SQuAD metrics (Exact Matchand F1) for predictions and references.
+
+        Args:
+            predictions: List of prediction strings.
+            references: List of reference answer strings.
+
+        Returns:
+            Dictionary with "exact_match" and "f1" keys, each containing a list of scores.
+        """
         exact_matches = []
         f1_scores = []
 
@@ -116,7 +179,7 @@ class TimebenchEval(evaluate.Metric):
                 {"id": "0", "prediction_text": self._extract_answer(pred)}
             ]
             formatted_ref = [
-                {"id": "0", "answers": {"text": [self._extract_answer(ref)], "answer_start": [0]}}
+                {"id": "0", "answers": {"text": [ref], "answer_start": [0]}}
             ]
 
             results = self.squad_metric.compute(
@@ -130,14 +193,19 @@ class TimebenchEval(evaluate.Metric):
             "f1": f1_scores,
         }
 
-    @staticmethod
-    def _parse_historical_date(date_str):
-        try:
-            return parser.parse(date_str).replace(day=1)
-        except ParserError:
-            return None
+    def _compare_dates(
+        self, predictions: list[str], references: list[str]
+    ) -> dict[str, list[int]]:
+        """
+        Parses and compares dates in predictions and references for exact match.
 
-    def _compare_dates(self, predictions, references):
+        Args:
+            predictions: List of prediction strings containing dates.
+            references: List of reference date strings.
+
+        Returns:
+            Dictionary with "exact_match" key containing a list of 0/1 scores.
+        """
         predictions = [
             self._parse_historical_date(self._extract_answer(pred))
             for pred in predictions
@@ -149,13 +217,63 @@ class TimebenchEval(evaluate.Metric):
             ],
         }
 
-    def _compute(self, predictions, references, task: str):
-        """Returns the scores"""
-        if task in [
-            "TempReason",
-            "TimeQA",
-            "MenatQA",
-        ]:
-            return self._call_squad(predictions, references)
-        elif task == "Date Arithmetic":
-            return self._compare_dates(predictions, references)
+    def _compute_timedial(
+        self, predictions: list[str], references: list[str]
+    ) -> dict[str, list[float]]:
+        """
+        Compute TimeDial metrics (Exact Match and F1) using set-based comparison of selected options.
+
+        Args:
+            predictions: List of prediction strings.
+            references: List of reference strings containing selected options.
+
+        Returns:
+            Dictionary with "exact_match" and "f1" keys, each containing a list of scores.
+        """
+        exact_matches = []
+        f1_scores = []
+
+        for pred, ref in zip(predictions, references):
+            pred_answer = self._extract_answer(pred)  # Get text after marker
+            pred_options = (
+                self._extract_selected_options(pred_answer) if pred_answer else set()
+            )
+            ref_options = self._extract_selected_options(ref)
+
+            # Exact match: sets must be identical
+            em = 1 if pred_options == ref_options else 0
+            exact_matches.append(em)
+
+            # F1: set-based
+            if not pred_options and not ref_options:
+                f1 = 1.0  # Both empty = perfect match
+            elif not pred_options or not ref_options:
+                f1 = 0.0  # One empty, one not
+            else:
+                tp = len(pred_options & ref_options)
+                precision = tp / len(pred_options)
+                recall = tp / len(ref_options)
+                f1 = (
+                    2 * precision * recall / (precision + recall)
+                    if (precision + recall) > 0
+                    else 0.0
+                )
+            f1_scores.append(f1)
+
+        return {"exact_match": exact_matches, "f1": f1_scores}
+
+    @staticmethod
+    def _parse_historical_date(date_str: str) -> datetime | None:
+        """
+        Parse a date string and return a datetime object with day set to 1.
+
+        Args:
+            date_str: String representation of a date.
+
+        Returns:
+            datetime object with day set to 1, or None if parsing fails.
+        """
+        try:
+            return parser.parse(date_str).replace(day=1)
+        except ParserError:
+            return None
