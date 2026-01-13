@@ -1,0 +1,13 @@
+[project]
+name = "timebench-eval"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "evaluate==0.4.6",
+    "huggingface-hub<0.25",
+    "pip>=25.3",
+    "pytest>=9.0.2",
+    "ruff>=0.14.11",
+]
