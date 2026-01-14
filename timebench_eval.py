@@ -82,8 +82,8 @@ class TimebenchEval(evaluate.Metric):
             # This defines the format of each prediction and reference
             features=datasets.Features(
                 {
-                    "predictions": datasets.Value("int64"),
-                    "references": datasets.Value("int64"),
+                    "predictions": datasets.Value("string"),
+                    "references": datasets.Value("string"),
                 }
             ),
             # Homepage of the module for documentation
