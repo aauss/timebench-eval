@@ -263,16 +263,18 @@ class TimebenchEval(evaluate.Metric):
         return {"exact_match": exact_matches, "f1": f1_scores}
 
     @staticmethod
-    def _parse_historical_date(date_str: str) -> datetime | None:
+    def _parse_historical_date(date_str: str | None) -> datetime | None:
         """
         Parse a date string and return a datetime object with day set to 1.
 
         Args:
-            date_str: String representation of a date.
+            date_str: String representation of a date, or None.
 
         Returns:
-            datetime object with day set to 1, or None if parsing fails.
+            datetime object with day set to 1, or None if parsing fails or input is None.
         """
+        if date_str is None:
+            return None
         try:
             return parser.parse(date_str).replace(day=1)
         except ParserError:
