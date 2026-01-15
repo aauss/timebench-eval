@@ -176,7 +176,7 @@ class TimebenchEval(evaluate.Metric):
 
         for i, (pred, ref) in enumerate(zip(predictions, references)):
             formatted_pred = [
-                {"id": "0", "prediction_text": self._extract_answer(pred)}
+                {"id": "0", "prediction_text": self._extract_answer(pred) or ""}
             ]
             formatted_ref = [
                 {"id": "0", "answers": {"text": [ref], "answer_start": [0]}}

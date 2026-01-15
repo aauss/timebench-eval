@@ -1,4 +1,4 @@
-from timebench_eval.timebench_eval import TimebenchEval
+from timebench_eval import TimebenchEval
 import pytest
 from conftest import (
     PREDICTION_1,

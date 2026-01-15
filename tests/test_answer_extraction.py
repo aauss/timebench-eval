@@ -1,5 +1,5 @@
 import pytest
-from timebench_eval.timebench_eval import TimebenchEval
+from timebench_eval import TimebenchEval
 from conftest import (
     PREDICTION_1,
     PREDICTION_2,
