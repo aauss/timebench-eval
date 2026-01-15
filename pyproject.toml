@@ -1,13 +1,21 @@
 [project]
 name = "timebench-eval"
 version = "0.1.0"
-description = "Add your description here"
+description = "Evaluation metric for the TimeBench temporal reasoning benchmark"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "evaluate==0.4.6",
     "huggingface-hub<0.25",
-    "pip>=25.3",
+    "python-dateutil>=2.8",
+    "datasets>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
     "pytest>=9.0.2",
     "ruff>=0.14.11",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

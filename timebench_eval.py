@@ -11,86 +11,75 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""TODO: Add a description here."""
+"""Evaluation metric for the TimeBench temporal reasoning benchmark."""
 
 import re
 from datetime import datetime
 
+import datasets
+import evaluate
 from dateutil import parser
 from dateutil.parser import ParserError
 
-import evaluate
-import datasets
-
-
-# TODO: Add BibTeX citation
 _CITATION = """\
-@InProceedings{huggingface:module,
-title = {A great new module},
-authors={huggingface, Inc.},
-year={2020}
+@software{abbood2026timebench_eval,
+  title={TimeBench Eval},
+  author={Abbood, Auss},
+  year={2026},
+  url={https://huggingface.co/spaces/aauss/timebench_eval}
 }
 """
 
-# TODO: Add description of the module here
 _DESCRIPTION = """\
-This new module is designed to solve this great ML task and is crafted with a lot of care.
+Evaluation metric for the TimeBench benchmark, which assesses temporal reasoning
+abilities in large language models. Supports multiple task types including TempReason,
+TimeQA, MenatQA, Date Arithmetic, and TimeDial.
 """
 
 
-# TODO: Add description of the arguments of the module here
 _KWARGS_DESCRIPTION = """
-Calculates how good are predictions given some references, using certain scores
+Calculates evaluation metrics for temporal reasoning tasks.
 Args:
-    predictions: list of predictions to score. Each predictions
-        should be a string with tokens separated by spaces.
-    references: list of reference for each prediction. Each
-        reference should be a string with tokens separated by spaces.
+    predictions: list of prediction strings from the model. Each prediction
+        should contain the marker "Thus, the correct answer is:" followed by the answer.
+    references: list of reference answer strings.
+    task: the task type, one of "TempReason", "TimeQA", "MenatQA", "Date Arithmetic", or "TimeDial".
 Returns:
-    accuracy: description of the first score,
-    another_score: description of the second score,
+    exact_match: list of exact match scores (0 or 1) for each prediction.
+    f1: list of F1 scores for each prediction (for applicable tasks).
 Examples:
-    Examples should be written in doctest format, and should illustrate how
-    to use the function.
-
-    >>> my_new_module = evaluate.load("my_new_module")
-    >>> results = my_new_module.compute(references=[0, 1], predictions=[0, 1])
+    >>> timebench_eval = evaluate.load("aauss/timebench_eval")
+    >>> predictions = ["Let me think... Thus, the correct answer is: Aug, 1987."]
+    >>> references = ["Aug, 1987"]
+    >>> results = timebench_eval.compute(predictions=predictions, references=references, task="Date Arithmetic")
     >>> print(results)
-    {'accuracy': 1.0}
+    {'exact_match': [1]}
 """
-
-# TODO: Define external resources urls if needed
-BAD_WORDS_URL = "http://url/to/external/resource/bad_words.txt"
 
 
 @evaluate.utils.file_utils.add_start_docstrings(_DESCRIPTION, _KWARGS_DESCRIPTION)
 class TimebenchEval(evaluate.Metric):
-    """TODO: Short description of my evaluation module."""
+    """Evaluation metric for TimeBench temporal reasoning tasks."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.squad_metric = evaluate.load("squad")
 
     def _info(self):
-        # TODO: Specifies the evaluate.EvaluationModuleInfo object
         return evaluate.MetricInfo(
-            # This is the description that will appear on the modules page.
             module_type="metric",
             description=_DESCRIPTION,
             citation=_CITATION,
             inputs_description=_KWARGS_DESCRIPTION,
-            # This defines the format of each prediction and reference
             features=datasets.Features(
                 {
                     "predictions": datasets.Value("string"),
                     "references": datasets.Value("string"),
                 }
             ),
-            # Homepage of the module for documentation
-            homepage="http://module.homepage",
-            # Additional links to the codebase or references
-            codebase_urls=["http://github.com/path/to/codebase/of/new_module"],
-            reference_urls=["http://path.to.reference.url/new_module"],
+            homepage="https://huggingface.co/spaces/aauss/timebench_eval",
+            codebase_urls=["https://huggingface.co/spaces/aauss/timebench_eval/tree/main"],
+            reference_urls=["https://huggingface.co/datasets/ulab-ai/Time-Bench"],
         )
 
     def _compute(
@@ -117,6 +106,10 @@ class TimebenchEval(evaluate.Metric):
             return self._compare_dates(predictions, references)
         elif task == "TimeDial":
             return self._compute_timedial(predictions, references)
+        else:
+            raise ValueError(
+                f"Unknown task: {task}. Expected one of: TempReason, TimeQA, MenatQA, Date Arithmetic, TimeDial"
+            )
 
     @staticmethod
     def _extract_answer(response: str) -> str | None:
