@@ -77,13 +77,18 @@ from conftest import (
     ],
 )
 def test_eval(prediction, reference, task, expected_metrics):
-    metrics = TimebenchEval()._compute([prediction], [reference], task)
+    metrics = TimebenchEval()._compute(
+        [prediction], [reference], task, return_average=False
+    )
     assert metrics == expected_metrics
 
 
 def test_eval_many():
     metrics = TimebenchEval()._compute(
-        [PREDICTION_3, PREDICTION_4], ["unanswerable", "Cardiff City"], "MenatQA"
+        [PREDICTION_3, PREDICTION_4],
+        ["unanswerable", "Cardiff City"],
+        "MenatQA",
+        return_average=False,
     )
     assert metrics == {
         "exact_match": [1, 1],

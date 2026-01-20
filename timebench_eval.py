@@ -15,11 +15,34 @@
 
 import re
 from datetime import datetime
+from typing import Literal, TypedDict
 
 import datasets
 import evaluate
 from dateutil import parser
 from dateutil.parser import ParserError
+
+TASK_TEMPREASON = "TempReason"
+TASK_TIMEQA = "TimeQA"
+TASK_MENATQA = "MenatQA"
+TASK_DATE_ARITHMETIC = "Date Arithmetic"
+TASK_TIMEDIAL = "TimeDial"
+VALID_TASKS = frozenset(
+    {TASK_TEMPREASON, TASK_TIMEQA, TASK_MENATQA, TASK_DATE_ARITHMETIC, TASK_TIMEDIAL}
+)
+
+SQUAD_TASKS = frozenset({TASK_TEMPREASON, TASK_TIMEQA, TASK_MENATQA})
+
+TaskType = Literal["TempReason", "TimeQA", "MenatQA", "Date Arithmetic", "TimeDial"]
+
+SELECTED_OPTIONS_PATTERN = r"\b([A-D])(?:\.|,|\s|&|$)"
+SELECTED_OPTIONS_REGEX = re.compile(SELECTED_OPTIONS_PATTERN)
+
+
+class TimebenchResult(TypedDict, total=False):
+    exact_match: float | list[float]
+    f1: float | list[float]
+
 
 _CITATION = """\
 @software{abbood2026timebench_eval,
@@ -44,16 +67,18 @@ Args:
         should contain the marker "Thus, the correct answer is:" followed by the answer.
     references: list of reference answer strings.
     task: the task type, one of "TempReason", "TimeQA", "MenatQA", "Date Arithmetic", or "TimeDial".
+    return_average: if True (default), returns average scores as floats.
+        If False, returns a list of scores for each sample.
 Returns:
-    exact_match: list of exact match scores (0 or 1) for each prediction.
-    f1: list of F1 scores for each prediction (for applicable tasks).
+    exact_match: average or list of exact match scores for each prediction.
+    f1: average or list of F1 scores for each prediction (for applicable tasks).
 Examples:
     >>> timebench_eval = evaluate.load("aauss/timebench_eval")
     >>> predictions = ["Let me think... Thus, the correct answer is: Aug, 1987."]
     >>> references = ["Aug, 1987"]
     >>> results = timebench_eval.compute(predictions=predictions, references=references, task="Date Arithmetic")
     >>> print(results)
-    {'exact_match': [1]}
+    {'exact_match': 1.0}
 """
 
 
@@ -65,7 +90,7 @@ class TimebenchEval(evaluate.Metric):
         super().__init__(*args, **kwargs)
         self.squad_metric = evaluate.load("squad")
 
-    def _info(self):
+    def _info(self) -> evaluate.MetricInfo:
         return evaluate.MetricInfo(
             module_type="metric",
             description=_DESCRIPTION,
@@ -78,13 +103,19 @@ class TimebenchEval(evaluate.Metric):
                 }
             ),
             homepage="https://huggingface.co/spaces/aauss/timebench_eval",
-            codebase_urls=["https://huggingface.co/spaces/aauss/timebench_eval/tree/main"],
+            codebase_urls=[
+                "https://huggingface.co/spaces/aauss/timebench_eval/tree/main"
+            ],
             reference_urls=["https://huggingface.co/datasets/ulab-ai/Time-Bench"],
         )
 
     def _compute(
-        self, predictions: list[str], references: list[str], task: str
-    ) -> dict[str, list[float]]:
+        self,
+        predictions: list[str],
+        references: list[str],
+        task: TaskType,
+        return_average: bool = True,
+    ) -> TimebenchResult:
         """
         Compute evaluation metrics for the given predictions and references.
 
@@ -92,24 +123,39 @@ class TimebenchEval(evaluate.Metric):
             predictions: List of prediction strings to evaluate.
             references: List of reference strings to compare against.
             task: Task type, one of: "TempReason", "TimeQA", "MenatQA", "Date Arithmetic", "TimeDial".
+            return_average: If True, returns average scores; if False, returns per-sample scores.
 
         Returns:
-            Dictionary containing metric scores (exact_match and/or f1) as lists of floats.
+            Dictionary containing metric scores (exact_match and/or f1) as floats or lists.
+
+        Raises:
+            ValueError: If predictions is empty.
+            ValueError: If predictions and references have different lengths.
+            ValueError: If task is not a valid task type.
         """
-        if task in [
-            "TempReason",
-            "TimeQA",
-            "MenatQA",
-        ]:
-            return self._call_squad(predictions, references)
-        elif task == "Date Arithmetic":
-            return self._compare_dates(predictions, references)
-        elif task == "TimeDial":
-            return self._compute_timedial(predictions, references)
+        # Validate inputs
+        if not predictions:
+            raise ValueError("predictions cannot be empty")
+        if len(predictions) != len(references):
+            raise ValueError(
+                f"predictions and references must have same length, "
+                f"got {len(predictions)} and {len(references)}"
+            )
+
+        if task in SQUAD_TASKS:
+            results = self._call_squad(predictions, references)
+        elif task == TASK_DATE_ARITHMETIC:
+            results = self._compare_dates(predictions, references)
+        elif task == TASK_TIMEDIAL:
+            results = self._compute_timedial(predictions, references)
         else:
             raise ValueError(
-                f"Unknown task: {task}. Expected one of: TempReason, TimeQA, MenatQA, Date Arithmetic, TimeDial"
+                f"Unknown task: {task}. Expected one of: {', '.join(VALID_TASKS)}"
             )
+
+        if return_average:
+            return {key: sum(values) / len(values) for key, values in results.items()}
+        return results
 
     @staticmethod
     def _extract_answer(response: str) -> str | None:
@@ -140,15 +186,7 @@ class TimebenchEval(evaluate.Metric):
         if not text:
             return set()
 
-        # Pattern matches option letters that appear:
-        # 1. At word boundary followed by period, comma, space, &, or end: \b[A-D](?=[.\s,&]|$)
-        # 2. This avoids matching letters inside words like "CAD" or "BAD"
-
-        # Find all A, B, C, D that look like option selections
-        # They should be at a word boundary and followed by typical delimiters
-        pattern = r"\b([A-D])(?:\.|,|\s|&|$)"
-
-        matches = re.findall(pattern, text)
+        matches = SELECTED_OPTIONS_REGEX.findall(text)
         return set(matches)
 
     def _call_squad(
