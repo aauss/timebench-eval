@@ -308,5 +308,5 @@ class TimebenchEval(evaluate.Metric):
             return None
         try:
             return parser.parse(date_str).replace(day=1)
-        except ParserError:
+        except (ParserError, OverflowError):
             return None
